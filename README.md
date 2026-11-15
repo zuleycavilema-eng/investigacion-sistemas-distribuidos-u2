@@ -6,8 +6,20 @@
 
 
 ## Abstract
-
-EEste trabajo evalúa experimentalmente la resiliencia del algoritmo de elección de líder Bully ante fallas crash-stop en clústeres de 5 a 80 nodos. Se implementó una simulación en Python con asyncio y se ejecutaron 600 corridas (4 escenarios de falla, 5 tamaños de clúster y 30 repeticiones), midiendo tiempo de convergencia, mensajes, rondas y corrección. En los escenarios A, B y D el tiempo medio de convergencia se mantuvo entre 86 y 107 ms; en la falla en cascada (C) fue de unos 222 a 254 ms y, con N = 80 y timeouts de 50/100 ms, ninguna corrida convergió. También fallaron algunas corridas de A y B con N = 80. En total, 48 de 600 corridas (8,0 %) no convergieron. Una prueba exploratoria con timeouts mayores sí convergió, pero no se determinó si la causa es el algoritmo o el simulador.
+Este trabajo evalúa experimentalmente la resiliencia del
+algoritmo de elección de líder Bully ante fallas crash-stop
+en clústeres de 5 a 80 nodos. Se implementó una simulación
+en Python con asyncio y se ejecutaron 600 corridas (4
+escenarios de falla, 5 tamaños de clúster y 30
+repeticiones), midiendo tiempo de convergencia, mensajes,
+rondas y corrección. En los escenarios A, B y D el tiempo
+medio de convergencia se mantuvo entre 86 y 107 ms; en la
+falla en cascada (C) fue de unos 222 a 254 ms y, con N = 80
+y timeouts de 50/100 ms, ninguna corrida convergió. También
+fallaron algunas corridas de A y B con N = 80. En total, 48
+de 600 corridas (8,0 %) no convergieron. Una prueba 
+exploratoria con timeouts mayores sí convergió, pero no se
+determinó si la causa es el algoritmo o el simulador.
 
 ## Contenido del repositorio
 
