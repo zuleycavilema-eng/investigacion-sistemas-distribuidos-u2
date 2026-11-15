@@ -29,7 +29,7 @@ Revisé el código línea por línea tras cada ronda. En cada versión el agente
 - **Ronda 2:** el bucle principal de cada nodo se bloqueaba al lanzar una ronda; se exigían todos los OK en lugar de uno; el escenario C no producía una cascada real; las rondas y la convergencia se medían mal.
 - **Ronda 3:** el bucle de `ejecutar` esperaba 10 s por corrida; la cascada nunca se activaba ni mataba al nodo; condición de carrera con dos líderes.
 - **Ronda 4:** rondas duplicadas; un líder ya proclamado ignoraba los ELECTION tardíos; un nodo caído podía seguir enviando mensajes.
-- **Validación:** prueba `--quick` (24 corridas, todas correctas) y corrida completa de 600 corridas. Se detectaron 33 corridas sin converger (B y C con N = 80) y se hizo una prueba exploratoria con timeouts de 200/400 ms, que se reporta aparte de `results.csv`.
+- **Validación:** prueba `--quick` (24 corridas, todas correctas) y corrida completa de 600 corridas. Se detectaron 48 corridas sin converger (A, B y C, casi todas con N = 80) y se hizo una prueba exploratoria con timeouts de 200/400 ms, que se reporta aparte de `results.csv`.
 
 ## Declaración de integridad académica
 
