@@ -1,0 +1,22 @@
+project:
+  render:
+    - articulo.qmd
+
+lang: es
+bibliography: references.bib
+
+execute:
+  echo: false
+  warning: false
+
+format:
+  typst:
+    papersize: us-letter
+    columns: 2
+    fontsize: 10pt
+    mainfont: "Times New Roman"
+    number-sections: true
+    section-numbering: "1.1"
+    margin:
+      x: 0.75in
+      y: 0.75in

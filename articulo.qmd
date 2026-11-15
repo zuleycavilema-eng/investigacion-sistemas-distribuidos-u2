@@ -1,0 +1,168 @@
+---
+title: "Implementación y Análisis de Resiliencia del Algoritmo de Elección de Líder (Bully Algorithm) ante Fallas de Caída de Nodos (Crash-Stop) en Clústeres Distribuidos"
+author: "Zuleyca Anahi Vilema Alvarez"
+abstract: |
+  Este trabajo evalúa experimentalmente la resiliencia del algoritmo de elección de líder Bully ante fallas crash-stop en clústeres de 5 a 80 nodos. Se implementó una simulación en Python con asyncio y se ejecutaron 600 corridas (4 escenarios de falla, 5 tamaños de clúster y 30 repeticiones), midiendo tiempo de convergencia, mensajes, rondas y corrección. En los escenarios de caída del líder (A), caída del líder más dos nodos (B) y caída del 50 % de los nodos (D), el tiempo medio de convergencia se mantuvo entre 93 y 110 ms sin un crecimiento claro con el tamaño del clúster, mientras que los mensajes pasaron de unos 10 a más de 1 700 en el escenario A. En la falla en cascada (C) el tiempo fue de unos 234 a 249 ms y, con N = 80 y timeouts de 50/100 ms, ninguna corrida convergió. En total, 33 de 600 corridas (5,5 %) no convergieron. Una prueba exploratoria con timeouts mayores sí convergió, pero no se determinó si la causa es el algoritmo o el simulador.
+
+  *Palabras clave:* algoritmo Bully, elección de líder, crash-stop, sistemas distribuidos, benchmark, asyncio.
+format:
+  typst:
+    fig-format: png
+    fig-dpi: 200
+---
+
+```{python}
+#| include: false
+import pandas as pd
+import matplotlib.pyplot as plt
+from IPython.display import Markdown, display
+
+df = pd.read_csv("results.csv")
+df["correcto"] = df["correcto"].astype(str) == "True"
+df["conv"] = df["tiempo_convergencia_ms"].notna()
+ESC = ["A", "B", "C", "D"]
+NS = sorted(df["n_nodos"].unique())
+
+def tabla(valores, fmt):
+    cab = "| Esc. | " + " | ".join(f"N={n}" for n in NS) + " |\n"
+    sep = "|:--|" + "--:|" * len(NS) + "\n"
+    filas = ""
+    for e in ESC:
+        celdas = []
+        for n in NS:
+            v = valores.get((e, n))
+            celdas.append("n/d" if v is None or pd.isna(v) else fmt(v))
+        filas += f"| {e} | " + " | ".join(celdas) + " |\n"
+    display(Markdown(cab + sep + filas))
+
+g = ["escenario", "n_nodos"]
+exito = (df.groupby(g)["correcto"].mean() * 100).to_dict()
+tiempo = df[df["conv"]].groupby(g)["tiempo_convergencia_ms"].mean().to_dict()
+msgs = df.groupby(g)["msgs_total"].mean().to_dict()
+rondas = df.groupby(g)["rondas"].mean().to_dict()
+```
+
+# Introducción
+
+En un sistema distribuido, muchos servicios dependen de un nodo coordinador (líder). Cuando ese nodo falla, los demás deben elegir un reemplazo de forma coordinada y rápida; mientras tanto, el servicio queda degradado. El algoritmo Bully, propuesto por Garcia-Molina [@garciamolina1982], resuelve este problema asignando el liderazgo al nodo vivo de mayor identificador, y es un algoritmo clásico de elección de líder [@tanenbaum2007; @lynch1996].
+
+Este trabajo implementa el Bully en una simulación y mide su comportamiento bajo fallas crash-stop, es decir, nodos que se detienen y no se recuperan. El objetivo es cuantificar el tiempo de convergencia, el costo en mensajes, las rondas de elección y la corrección para distintos tamaños de clúster y patrones de falla. Los aportes son una simulación reproducible con asyncio, un benchmark de 600 corridas y el análisis de los casos en que la elección no converge.
+
+# Marco teórico
+
+El Bully usa tres mensajes: ELECTION, OK y COORDINATOR. Un nodo que detecta la caída del líder envía ELECTION a todos los nodos con identificador mayor. Si ninguno responde OK dentro de un plazo, se proclama líder y envía COORDINATOR a los demás; si recibe un OK, se retira y espera el COORDINATOR del ganador, reiniciando la elección si no llega. Su costo en mensajes es O(N^2^) en el peor caso [@tanenbaum2007].
+
+El algoritmo se apoya en timeouts para detectar fallas, por lo que asume un sistema suficientemente síncrono. En sistemas asíncronos con fallas, el consenso (con el que la elección de líder está relacionada) no puede garantizarse de forma determinista [@fischer1985], y los detectores de fallas no confiables pueden sospechar de nodos que siguen vivos [@chandra1996]. Protocolos modernos como Raft eligen líder con timeouts aleatorizados para reducir elecciones simultáneas [@ongaro2014].
+
+# Metodología experimental
+
+**Hipótesis.** A partir de la teoría se esperaba que (H1) el costo en mensajes crezca de forma superlineal con N, (H2) el tiempo de convergencia esté acotado inferiormente por los timeouts del protocolo y (H3) una falla en cascada (escenario C) aumente el tiempo y las rondas respecto a una sola caída (escenario A).
+
+**Simulación.** Se implementó en Python 3.14 con asyncio (`benchmark.py`): cada nodo es una corrutina con su cola de mensajes. La red agrega una latencia uniforme de 1 a 5 ms por mensaje y descarta los mensajes dirigidos a nodos caídos (crash-stop, sin recuperación). Los timeouts son de 50 ms para esperar OK y de 100 ms para esperar COORDINATOR. Los nodos tienen identificadores 0 a N-1 y el líder inicial es el N-1.
+
+**Escenarios.** A: cae el líder. B: cae el líder y 2 nodos aleatorios. C: cae el líder y, una vez por corrida, el primer nodo que se proclama nuevo líder cae justo antes de enviar COORDINATOR (falla en cascada). D: cae el 50 % de los nodos, incluido el líder.
+
+**Parámetros.** N en {5, 10, 20, 40, 80}, 30 repeticiones por combinación y semilla base 42, con un generador pseudoaleatorio independiente por corrida: 600 corridas en total.
+
+**Métricas.** Tiempo de convergencia en ms (desde la caída del líder hasta que todos los nodos vivos reconocen como líder al mayor identificador vivo, con tope de 10 s), mensajes ELECTION, OK y COORDINATOR (contados al enviarse, incluidos los perdidos), rondas de elección iniciadas en el clúster y corrección (un único líder, el mayor vivo). Una corrida que no converge se registra sin tiempo y como incorrecta; los promedios de tiempo usan solo corridas convergentes.
+
+**Entorno.** Windows, Python 3.14.3, un solo proceso. El código y los datos están en el repositorio.
+
+# Resultados
+
+De las 600 corridas, 33 (5,5 %) no convergieron: 3 en el escenario B con N = 80 y las 30 del escenario C con N = 80. Las tablas resumen la tasa de éxito (@tbl-exito), el tiempo medio de convergencia (@tbl-tiempo), los mensajes medios (@tbl-msgs) y las rondas medias (@tbl-rondas).
+
+```{python}
+#| label: tbl-exito
+#| tbl-cap: "Tasa de éxito (%) por escenario y tamaño de clúster."
+tabla(exito, lambda v: f"{v:.0f}")
+```
+
+```{python}
+#| label: tbl-tiempo
+#| tbl-cap: "Tiempo medio de convergencia (ms), solo corridas convergentes. n/d: ninguna corrida convergió."
+tabla(tiempo, lambda v: f"{v:.1f}")
+```
+
+```{python}
+#| label: tbl-msgs
+#| tbl-cap: "Mensajes totales medios por corrida (incluye corridas que no convergieron)."
+tabla(msgs, lambda v: f"{v:.0f}")
+```
+
+```{python}
+#| label: tbl-rondas
+#| tbl-cap: "Rondas de elección medias por corrida."
+tabla(rondas, lambda v: f"{v:.1f}")
+```
+
+```{python}
+#| label: fig-tiempo
+#| fig-cap: "Tiempo medio de convergencia frente a N (solo corridas convergentes; el escenario C no tiene punto en N = 80)."
+#| fig-width: 3.4
+#| fig-height: 2.4
+fig, ax = plt.subplots()
+for e in ESC:
+    sub = df[(df["escenario"] == e) & df["conv"]].groupby("n_nodos")["tiempo_convergencia_ms"].mean()
+    ax.plot(sub.index, sub.values, marker="o", label=f"Esc. {e}")
+ax.set_xscale("log")
+ax.set_xticks(NS)
+ax.set_xticklabels(NS)
+ax.minorticks_off()
+ax.set_xlabel("Nodos (N)")
+ax.set_ylabel("Tiempo (ms)")
+ax.legend(fontsize=7)
+ax.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-msgs
+#| fig-cap: "Mensajes totales medios frente a N, en escala logarítmica (incluye corridas que no convergieron)."
+#| fig-width: 3.4
+#| fig-height: 2.4
+fig, ax = plt.subplots()
+for e in ESC:
+    sub = df[df["escenario"] == e].groupby("n_nodos")["msgs_total"].mean()
+    ax.plot(sub.index, sub.values, marker="o", label=f"Esc. {e}")
+ax.set_xscale("log")
+ax.set_yscale("log")
+ax.set_xticks(NS)
+ax.set_xticklabels(NS)
+ax.minorticks_off()
+ax.set_xlabel("Nodos (N)")
+ax.set_ylabel("Mensajes")
+ax.legend(fontsize=7)
+ax.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+**Prueba exploratoria.** Para el escenario C con N = 80 se hicieron 3 corridas por configuración, con tope de 5 s y fuera de `results.csv`. Con timeouts de 50/100 ms ninguna convergió (79 rondas y 9 322 mensajes en dos corridas; 1 867 rondas y 100 800 mensajes en la tercera). Con timeouts de 200/400 ms las 3 convergieron en 772, 825 y 820 ms, con 157 rondas y 12 480 mensajes, y resultado correcto.
+
+# Discusión crítica y limitaciones
+
+**Limitaciones.**
+
+- La simulación corre en tiempo real en un solo hilo de asyncio: los resultados varían entre ejecuciones y, con N grande, el event loop puede retrasar mensajes más allá de los timeouts.
+- La latencia simulada depende de la resolución del temporizador de Windows.
+- El tiempo de detección de la falla se asume cero. El detector es aleatorio en A, B y D, y el nodo vivo de menor identificador en C, por lo que en C los mensajes no tienen variabilidad.
+- Los promedios de tiempo excluyen las corridas que no convergieron, lo que sesga a favor al escenario B con N = 80.
+- Se usó una sola máquina y una semilla base, y la prueba exploratoria es de solo 3 corridas.
+- Los timeouts no se variaron en el experimento principal.
+
+**Análisis.**
+**H2 (tiempo vs. N).** El tiempo de convergencia se mantuvo prácticamente constante al aumentar el tamaño del clúster en los escenarios A, B y D. Por ejemplo, en el escenario A pasó de 104,2 ms para N=5 a 106,1 ms para N=80, lo que sugiere que el tiempo está dominado principalmente por los timeouts fijos del protocolo (50 ms para OK y 100 ms para COORDINATOR) y la latencia simulada de la red, más que por el número de nodos. Estos resultados son consistentes con la hipótesis H2, ya que el tiempo observado permanece acotado por los mecanismos de espera del protocolo (@tbl-tiempo, @fig-tiempo).
+
+**H1 (mensajes).** El crecimiento del número de mensajes fue consistente con la hipótesis H1 de un costo superlineal. En el escenario C, los mensajes aumentaron de 30 para N=5 a 160 para N=10, 720 para N=20 y 3040 para N=40, mostrando una tendencia compatible con el comportamiento O(N²) descrito para el algoritmo Bully. Aunque el experimento no permite ajustar una curva exacta, los resultados observados no contradicen la complejidad teórica esperada (@tbl-msgs, @fig-msgs).
+
+**H3 (efecto de la cascada).** La falla en cascada incrementó significativamente el tiempo de convergencia y el número de rondas respecto a una única caída del líder. Por ejemplo, para N=5 el tiempo medio aumentó de 104,2 ms en el escenario A a 248,9 ms en el escenario C, mientras que las rondas medias crecieron de 2,5 a 7,0. Esto indica que la pérdida repetida del nodo que debía asumir el liderazgo obliga a reiniciar el proceso de elección varias veces, aumentando el costo temporal del protocolo (@tbl-tiempo, @tbl-rondas).
+
+**Corridas sin convergencia.** Las 33 corridas sin convergencia se dieron únicamente con N=80: 30 en el escenario C y 3 en el escenario B. En el escenario C, la falla en cascada obliga a reiniciar repetidamente el proceso de elección, por lo que cada intento fallido acumula nuevas rondas y esperas asociadas a los timeouts. Sin embargo, también es posible que el simulador haya influido en estos resultados, ya que la ejecución en un único hilo de asyncio puede introducir retrasos adicionales cuando existe una gran cantidad de tareas y mensajes concurrentes. La prueba exploratoria con timeouts mayores logró convergencia en las tres corridas realizadas, pero debido al reducido tamaño de la muestra no puede concluirse de forma definitiva si la causa principal es una limitación inherente del algoritmo bajo estas condiciones o una restricción del entorno de simulación.
+
+# Conclusiones
+
+1. El algoritmo Bully mostró un comportamiento resiliente ante fallas crash-stop, con una tasa global de éxito del 94,5 % (567 de 600 corridas) y tiempos de convergencia cercanos a 100 ms en los escenarios A, B y D.
+2. El crecimiento del número de mensajes fue consistente con la hipótesis H1, observándose una tendencia superlineal compatible con el costo O(N²) descrito para el algoritmo Bully.
+3. La falla en cascada fue el escenario más exigente, elevando el tiempo de convergencia hasta aproximadamente 249 ms y concentrando 30 de las 33 corridas sin convergencia. Los resultados sugieren que tanto las características del algoritmo como las limitaciones del simulador pueden haber influido en este comportamiento.
