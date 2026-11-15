@@ -3,7 +3,7 @@
 **Asignatura:** Sistemas Distribuidos y Paradigmas de la Computación (ETL1TP50), Unidad 2
 **Carrera:** Ingeniería en Telemática, ESPOCH (FIE)
 **Autora:** Zuleyca Anahi Vilema Alvarez
-**Actividad:** Investigación Formativa Individual (ACD, 1.5 pts)
+
 
 ## Abstract
 
